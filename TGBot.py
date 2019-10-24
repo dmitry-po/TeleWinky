@@ -9,6 +9,7 @@ class TinkiVinki:
         token = self.__get_token__()
         self.url = base_url + token
         self.data = {'offset': self.offset, 'limit': 1, 'timeout': 1}
+        self.commands = {}
 
         # proxy parameters
         self.use_proxy = use_proxy
@@ -16,7 +17,6 @@ class TinkiVinki:
         self.proxies_list = []
         if self.use_proxy:
             self.__get_proxies__()
-
 
     def __get_params__(self):
         with open('updateid.tg', 'r') as f:
@@ -48,7 +48,7 @@ class TinkiVinki:
             print(f'Trying {proxy}')
             try:
                 request = requests.get(self.url + '/getME',
-                             proxies=self.proxy)
+                                       proxies=self.proxy)
                 print(request.json()['ok'])
                 print(f'Valid proxy found: {proxy}')
                 break
@@ -60,60 +60,74 @@ class TinkiVinki:
             f.write(str(self.offset))
 
     def check_updates(self):
-        self.data = {'offset': self.offset, 'limit': 1, 'timeout': 30}
+        print('check')
+        self.data = {'offset': self.offset, 'limit': 1, 'timeout': 1}
         try:
             request = requests.post(self.url + '/getUpdates',
                                     data=self.data,
                                     proxies=self.proxy)
-            print(request.text)
+            print(request.json()['result'])
         except Exception as e:
             print(f'Error getting updates: {e}')
             raise ConnectionError(e)
-        return request.json()['result']
+        try:
+            update = request.json()['result']
+        except KeyError:
+            update = {}
+        return update
 
-    def process_updates(self, updates):
-        message = ''
-        for update in updates:
-            self.offset = int(update['update_id']) + 1
+    def process_updates(self, update):
+        print('process')
+        print(f'Active commands: {self.commands}')
+        if 'text' in update:
+            if update['text'] in self.commands.keys():
+                self.commands[update['text']](update)
+        else:
+            print('pass')
+        return update
 
-            # Прерывать обработку при получении не текстовых сообщений.
-            if 'message' not in update or 'text' not in update['message']:
-                print('Unknown message')
-                continue
-
-            message = f"Сам ты {update['message']['text']}"
-        return message
-
-    def send_message(self, update, reply_text, **kwargs):
-        message_data = {  # формируем информацию для отправки сообщения
-            'chat_id': update['message']['chat']['id'],  # куда отправляем сообщение
-            'text': reply_text,  # само сообщение для отправки
-            # 'reply_to_message_id': update['message']['message_id'],   # если параметр указан, то бот отправит сообщение в reply
-            'parse_mode': 'HTML',  # про форматирование текста ниже
-            'reply_markup': kwargs['inline_button'] if kwargs != {} else ''
+    def send_message(self, chat_id, reply_text, **kwargs):
+        message_data = {
+            'chat_id': chat_id,
+            'text': reply_text,
+            'parse_mode': 'HTML'
         }
+        if kwargs != {}:
+            for arg in kwargs:
+                message_data[arg] = kwargs[arg]
 
         try:
-            request = requests.post(self.url + '/sendMessage', data=message_data,
-                                    proxies=self.proxy)  # запрос на отправку сообщения
+            request = requests.post(self.url + '/sendMessage',
+                                    data=message_data,
+                                    proxies=self.proxy)
         except:
             print('Send message error')
 
-    def run(self):
-        try:
-            updates = self.check_updates()
-            reply = self.process_updates(updates)
-            self.send_message(updates, reply)
-        except KeyboardInterrupt:
-            message = 'Interrupted by the user'
-            print(message)
-            self.__save_params__()
-            raise KeyboardInterrupt(message)
-        except ConnectionError:
-            print('Network problem')
-            if self.use_proxy:
-                self.__search_valid_proxy__()
+    def set_updates(self, rule):
+        def decorator(func):
+            self.commands[rule] = func
 
+        return decorator
+
+    def do_something(self):
+        print('Voila')
+
+    def run(self):
+        while True:
+            try:
+                updates = self.check_updates()
+                for update in updates:
+                    self.offset = update['update_id'] + 1
+                    self.process_updates(update['message'])
+            except KeyboardInterrupt:
+                message = 'Interrupted by the user'
+                print(message)
+                self.__save_params__()
+                raise KeyboardInterrupt(message)
+            except ConnectionError:
+                print('Network problem')
+                if self.use_proxy:
+                    self.__search_valid_proxy__()
 
 
 if __name__ == "__main__":
