@@ -10,6 +10,7 @@ class TinkiVinki:
         self.url = base_url + token
         self.data = {'offset': self.offset, 'limit': 1, 'timeout': 1}
         self.commands = {}
+        self.handlers = []
 
         # proxy parameters
         self.use_proxy = use_proxy
@@ -76,16 +77,6 @@ class TinkiVinki:
             update = {}
         return update
 
-    def process_updates(self, update):
-        print('process')
-        print(f'Active commands: {self.commands}')
-        if 'text' in update:
-            if update['text'] in self.commands.keys():
-                self.commands[update['text']](update)
-        else:
-            print('pass')
-        return update
-
     def send_message(self, chat_id, reply_text, **kwargs):
         message_data = {
             'chat_id': chat_id,
@@ -95,7 +86,7 @@ class TinkiVinki:
         if kwargs != {}:
             for arg in kwargs:
                 message_data[arg] = kwargs[arg]
-
+        print(message_data)
         try:
             request = requests.post(self.url + '/sendMessage',
                                     data=message_data,
@@ -103,14 +94,18 @@ class TinkiVinki:
         except:
             print('Send message error')
 
-    def set_updates(self, rule):
+    def add_handlers(self, filter):
         def decorator(func):
-            self.commands[rule] = func
+            self.handlers.append({'function': func, 'filter': filter})
 
         return decorator
 
-    def do_something(self):
-        print('Voila')
+    def process_updates(self, update):
+        print('process')
+        print(f'Active handlers: {self.handlers}')
+        for handler in self.handlers:
+            if handler['filter'](update):
+                handler['function'](update)
 
     def run(self):
         while True:
@@ -118,7 +113,7 @@ class TinkiVinki:
                 updates = self.check_updates()
                 for update in updates:
                     self.offset = update['update_id'] + 1
-                    self.process_updates(update['message'])
+                    self.process_updates(update)
             except KeyboardInterrupt:
                 message = 'Interrupted by the user'
                 print(message)
