@@ -1,14 +1,14 @@
 # coding: utf-8
 import requests
+import json
 
 
-class TinkiVinki:
-    def __init__(self, use_proxy=False):
+class TeleWinki:
+    def __init__(self, token, use_proxy=False):
         self.offset = self.__get_params__()
         base_url = 'https://api.telegram.org/bot'
-        token = self.__get_token__()
         self.url = base_url + token
-        self.data = {'offset': self.offset, 'limit': 1, 'timeout': 1}
+        self.data = {'offset': self.offset, 'limit': 1, 'timeout': 100}
         self.commands = {}
         self.handlers = []
 
@@ -23,24 +23,15 @@ class TinkiVinki:
         with open('updateid.tg', 'r') as f:
             return (int(f.readline()))
 
-    def __get_token__(self):
-        with open('token.tg', 'r') as f:
-            return f.readline().strip()
-
     def __get_proxies__(self):
         proxies_list = []
         try:
             with open('proxies.tg', 'r') as f:
-                for line in f:
-                    proxy = {}
-                    for i in line.strip('\n').split(','):
-                        proxy[i.split(':')[0]] = ':'.join(i.split(':')[1:])
-                    proxies_list.append(proxy)
+                proxies_list = json.load(f)
         except FileNotFoundError:
             self.use_proxy = False
-            proxies_list = []
         self.proxies_list = proxies_list
-        print(self.proxies_list)
+        print(self.proxies_list[:3])
 
     def __search_valid_proxy__(self):
         print('Looking for valid proxy')
@@ -61,8 +52,8 @@ class TinkiVinki:
             f.write(str(self.offset))
 
     def check_updates(self):
-        print('check')
-        self.data = {'offset': self.offset, 'limit': 1, 'timeout': 1}
+        #print('check')
+        self.data['offset'] = self.offset
         try:
             request = requests.post(self.url + '/getUpdates',
                                     data=self.data,
@@ -86,18 +77,20 @@ class TinkiVinki:
         if kwargs != {}:
             for arg in kwargs:
                 message_data[arg] = kwargs[arg]
-        print(message_data)
+        #print(message_data)
         try:
             request = requests.post(self.url + '/sendMessage',
                                     data=message_data,
                                     proxies=self.proxy)
-        except:
+        except ConnectionError:
+            raise(e)
+        except Exception as e:
             print('Send message error')
+            print(e)
 
     def add_handlers(self, filter):
         def decorator(func):
             self.handlers.append({'function': func, 'filter': filter})
-
         return decorator
 
     def process_updates(self, update):
@@ -126,6 +119,10 @@ class TinkiVinki:
 
 
 if __name__ == "__main__":
-    tb = TinkiVinki(use_proxy=True)
-    while True:
-        tb.run()
+    app = TinkiVinki(use_proxy=True)
+    @app.add_handlers(lambda x: True)
+    def parrot(update):
+        if 'message' in update and 'text' in update['message']:
+            app.send_message(chat_id=update['message']['chat']['id'],
+                             reply_text=update['message']['text'])
+    app.run()
